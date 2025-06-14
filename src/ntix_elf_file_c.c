@@ -91,26 +91,31 @@ ntix_elf_file_c* ntix_elf_file_new(const char* path)
 
 const ntix_elf_header_t* ntix_elf_file_getElfHeader(const ntix_elf_file_c* self)
 {
+    if (!self) return NULL;
     return &self->header;
 }
 
 const ntix_elf_program_header_t* ntix_elf_file_getProgramHeaderArray(const ntix_elf_file_c* self)
 {
+    if (!self) return NULL;
     return self->program_header_array;
 }
 
 size_t ntix_elf_file_getProgramHeaderArrayLen(const ntix_elf_file_c* self)
 {
+    if (!self) return 0;
     return self->program_header_len;
 }
 
 FILE* ntix_elf_file_getRawFile(const ntix_elf_file_c* self)
 {
+    if (!self) return NULL;
     return self->raw_elf_file;
 }
 
 bool ntix_elf_file_isValidNtixElfFile(const ntix_elf_file_c* self)
 {
+    if (!self) return 0;
     return self->header.e_ident.fields.osabi == NTIX_ELFOSABI_NTIX;
 }
 
