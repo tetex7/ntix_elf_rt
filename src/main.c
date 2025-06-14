@@ -28,27 +28,32 @@
 #include <ntdef.h>
 #include <winternl.h>
 
-void cleanup_FILE(FILE** file)
-{
-    if (*file)
-    {
-        fclose(*file);
-        *file = NULL;
-    }
-}
-
-void cleanup_HANDLE(HANDLE** handle)
-{
-    if (*handle)
-    {
-        CloseHandle(*handle);
-        *handle = NULL;
-    }
-}
-
 NtCreateProcessEx_t NtCreateProcessEx = NULL;
 NtAllocateVirtualMemory_t NtAllocateVirtualMemory = NULL;
 NtCreateThreadEx_t NtCreateThreadEx = NULL;
+
+
+__attribute__((constructor))
+static void ctor()
+{
+    NtCreateProcessEx =
+    (NtCreateProcessEx_t)GetProcAddress(
+        GetModuleHandleW(L"ntdll.dll"),
+        "NtCreateProcessEx"
+    );
+
+    NtAllocateVirtualMemory =
+    (NtAllocateVirtualMemory_t)GetProcAddress(
+        GetModuleHandleW(L"ntdll.dll"),
+        "NtAllocateVirtualMemory"
+    );
+
+    NtCreateThreadEx =
+    (NtCreateThreadEx_t)GetProcAddress(
+        GetModuleHandleW(L"ntdll.dll"),
+        "NtCreateThreadEx"
+    );
+}
 
 bool MCL = true;
 
@@ -61,14 +66,17 @@ HANDLE rtVmPorc = NULL;
 HANDLE rtVmMainThread = NULL;
 
 
-void* map_elf(HANDLE vmProc, ntix_elf_header_t* header, FILE* elfFile)
+void* map_elf(HANDLE vmProc, const ntix_elf_file_c* elf)
 {
-    fseek(elfFile, header->e_phoff, SEEK_SET);
+    const ntix_elf_header_t* header = ntix_elf_file_getElfHeader(elf);
+    FILE* rawElfFile = ntix_elf_file_getRawFile(elf);
+
+    fseek(rawElfFile, (long)header->e_phoff, SEEK_SET);
 
     for (uint16_t i = 0; i < header->e_phnum; i++)
     {
         ntix_elf_program_header_t ph;
-        fread(&ph, sizeof(ph), 1, elfFile);
+        fread(&ph, sizeof(ph), 1, rawElfFile);
 
         if (ph.p_type != NTIX_PT_LOAD)
             continue;
@@ -88,7 +96,7 @@ void* map_elf(HANDLE vmProc, ntix_elf_header_t* header, FILE* elfFile)
         if (status != 0)
         {
             fprintf(stderr, "Failed to allocate memory in target process: 0x%08lX\n", status);
-            continue;
+            return NULL;
         }
 
         // Read segment from file
@@ -96,17 +104,18 @@ void* map_elf(HANDLE vmProc, ntix_elf_header_t* header, FILE* elfFile)
         if (!segment_data)
         {
             fprintf(stderr, "Out of memory\n");
-            continue;
+            return NULL;
         }
 
-        fseek(elfFile, ph.p_offset, SEEK_SET);
-        fread(segment_data, 1, ph.p_filesz, elfFile);
+        fseek(rawElfFile, ph.p_offset, SEEK_SET);
+        fread(segment_data, 1, ph.p_filesz, rawElfFile);
 
         // Write into remote process
         SIZE_T written = 0;
         if (!WriteProcessMemory(vmProc, remote_addr, segment_data, ph.p_filesz, &written))
         {
             fprintf(stderr, "WriteProcessMemory failed: %lu\n", GetLastError());
+            return NULL;
         }
 
         free(segment_data);
@@ -126,8 +135,6 @@ void* map_elf(HANDLE vmProc, ntix_elf_header_t* header, FILE* elfFile)
 }
 
 
-
-
 int main(int argc, const char* argv[])
 {
     if (argc < 2)
@@ -137,24 +144,6 @@ int main(int argc, const char* argv[])
     }
     signal(SIGINT, sig);
 
-    NtCreateProcessEx =
-    (NtCreateProcessEx_t)GetProcAddress(
-        GetModuleHandleW(L"ntdll.dll"),
-        "NtCreateProcessEx"
-    );
-
-    NtAllocateVirtualMemory =
-    (NtAllocateVirtualMemory_t)GetProcAddress(
-        GetModuleHandleW(L"ntdll.dll"),
-        "NtAllocateVirtualMemory"
-    );
-
-    NtCreateThreadEx =
-    (NtCreateThreadEx_t)GetProcAddress(
-        GetModuleHandleW(L"ntdll.dll"),
-        "NtCreateThreadEx"
-    );
-
     const char* file = argv[1];
 
     ntix_elf_file_c* elf_file = ntix_elf_file_new(file);
@@ -163,7 +152,6 @@ int main(int argc, const char* argv[])
     {
         printf("How did you do that we're not even done yet\n");
     }
-
 
     OBJECT_ATTRIBUTES attr;
     InitializeObjectAttributes(&attr, NULL, 0, NULL, NULL);
@@ -185,20 +173,26 @@ int main(int argc, const char* argv[])
     if (status != 0)
     {
         printf("NtCreateProcessEx failed with status 0x%lX\n", status);
+        ntix_elf_file_destroy(elf_file);
         return 66;
     }
 
     printf("Blank zombie process created! Handle: %p\n", rtVmPorc);
 
-    //void* funcCall = map_elf(rtVmPorc, &elf_header, elf_file);
 
-    /*NTSTATUS rstatus =  NtCreateThreadEx(
+    HANDLE hMap = CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, 4096, L"MySecretPocket");
+    void* pShared = MapViewOfFile(hMap, FILE_MAP_ALL_ACCESS, 0, 0, 0);
+
+    void* funcCall = map_elf(rtVmPorc, elf_file);
+    (void)funcCall;
+
+    NTSTATUS rstatus =  NtCreateThreadEx(
         &rtVmMainThread,
         THREAD_ALL_ACCESS,
         NULL,                              // ObjectAttributes
         rtVmPorc,                          // Handle to the process you're injecting into
         (LPTHREAD_START_ROUTINE)funcCall,  // Entry point inside the target
-        NULL,                              // Optional param
+        pShared,                           // Optional param
         FALSE,                             // Create suspended?
         0,                                 // ZeroBits
         0x10000,                           // StackSize
@@ -209,11 +203,16 @@ int main(int argc, const char* argv[])
     if (rstatus != 0)
     {
         printf("NtCreateThreadEx failed with status 0x%lX\n", status);
+        TerminateProcess(rtVmPorc, 0);
+        CloseHandle(rtVmPorc);
+        ntix_elf_file_destroy(elf_file);
         return 67;
-    }*/
+    }
+    WaitForSingleObject(rtVmMainThread, INFINITE);
 
     TerminateProcess(rtVmPorc, 0);
-    //CloseHandle(rtVmMainThread);
+    CloseHandle(rtVmMainThread);
     CloseHandle(rtVmPorc);
-
+    ntix_elf_file_destroy(elf_file);
+    return 0;
 }

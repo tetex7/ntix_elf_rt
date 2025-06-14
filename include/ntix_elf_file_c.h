@@ -40,8 +40,10 @@ ntix_elf_file_c* ntix_elf_file_new(const char* path);
 const ntix_elf_header_t* ntix_elf_file_getElfHeader(const ntix_elf_file_c* self);
 const ntix_elf_program_header_t* ntix_elf_file_getProgramHeaderArray(const ntix_elf_file_c* self);
 size_t ntix_elf_file_getProgramHeaderArrayLen(const ntix_elf_file_c* self);
+FILE* ntix_elf_file_getRawFile(const ntix_elf_file_c* self);
 bool ntix_elf_file_isValidNtixElfFile(const ntix_elf_file_c* self);
 
 void ntix_elf_file_destroy(ntix_elf_file_c* self);
+void ntix_elf_file_destroy_cleanup(ntix_elf_file_c** self);
 
 #endif //NTIX_ELF_FILE_C_H

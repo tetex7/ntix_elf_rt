@@ -20,17 +20,12 @@
 //
 
 #include <string.h>
-#include <memory.h>
 #include <stdlib.h>
 
 #include "ntix_elf_file_c.h"
 
-
-
 ntix_elf_file_c* ntix_elf_file_new(const char* path)
 {
-
-
     FILE* file = fopen(path, "rb");
     if (!file)
         return NULL;
@@ -104,15 +99,19 @@ const ntix_elf_program_header_t* ntix_elf_file_getProgramHeaderArray(const ntix_
     return self->program_header_array;
 }
 
-
 size_t ntix_elf_file_getProgramHeaderArrayLen(const ntix_elf_file_c* self)
 {
     return self->program_header_len;
 }
 
+FILE* ntix_elf_file_getRawFile(const ntix_elf_file_c* self)
+{
+    return self->raw_elf_file;
+}
+
 bool ntix_elf_file_isValidNtixElfFile(const ntix_elf_file_c* self)
 {
-    return  self->header.e_ident.fields.osabi == NTIX_ELFOSABI_NTIX;
+    return self->header.e_ident.fields.osabi == NTIX_ELFOSABI_NTIX;
 }
 
 void ntix_elf_file_destroy(ntix_elf_file_c* self)
@@ -123,4 +122,12 @@ void ntix_elf_file_destroy(ntix_elf_file_c* self)
     if (self->program_header_array)
         free(self->program_header_array);
     free(self);
+}
+
+void ntix_elf_file_destroy_cleanup(ntix_elf_file_c** self)
+{
+    if (!self) return;
+    if (!*self) return;
+    ntix_elf_file_destroy(*self);
+    *self = NULL;
 }

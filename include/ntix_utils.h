@@ -29,6 +29,12 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#ifndef SECTION_INHERIT
+typedef enum _SECTION_INHERIT {
+    ViewShare = 1,
+    ViewUnmap = 2
+} SECTION_INHERIT;
+#endif
 
 #define NTIX_CLEANUP(func_call) __attribute__((cleanup(func_call)))
 
@@ -65,6 +71,31 @@ typedef NTSTATUS (NTAPI *NtCreateThreadEx_t)(
     IN SIZE_T StackSize,
     IN SIZE_T MaximumStackSize,
     IN PVOID AttributeList OPTIONAL
+);
+
+// NtCreateSection
+typedef NTSTATUS (NTAPI *NtCreateSection_t)(
+    OUT PHANDLE SectionHandle,
+    IN ACCESS_MASK DesiredAccess,
+    IN OPTIONAL POBJECT_ATTRIBUTES ObjectAttributes,
+    IN OPTIONAL PLARGE_INTEGER MaximumSize,
+    IN ULONG SectionPageProtection,
+    IN ULONG AllocationAttributes,
+    IN OPTIONAL HANDLE FileHandle
+);
+
+// NtMapViewOfSection
+typedef NTSTATUS (NTAPI *NtMapViewOfSection_t)(
+    IN HANDLE SectionHandle,
+    IN HANDLE ProcessHandle,
+    IN OUT PVOID *BaseAddress,
+    IN ULONG_PTR ZeroBits,
+    IN SIZE_T CommitSize,
+    IN OUT PLARGE_INTEGER SectionOffset,
+    IN OUT PSIZE_T ViewSize,
+    IN SECTION_INHERIT InheritDisposition,
+    IN ULONG AllocationType,
+    IN ULONG Win32Protect
 );
 
 extern NtCreateProcessEx_t NtCreateProcessEx;
